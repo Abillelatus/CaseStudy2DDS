@@ -1,0 +1,67 @@
+---
+title: "MSDS_6306_Case_Study_Two"
+author: "Ryan Herrin"
+date: "11/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(plotly)
+library(ggplot2)
+library(plyr) # Load first before dplyer 
+library(dplyr)
+library(tidyr)
+library(maps)
+library(mapproj)
+library(ggalt)
+library(class)
+library(caret)
+library(e1071)
+library(tm)
+library(mvtnorm)
+library(xlsx)
+library(leaflet)
+library(ggvis)
+library(pracma)
+library(kknn) # used by the nearest_neighbor engine
+```
+
+# Setup and read-in provided Data
+```{r}
+# define locations within folder structure 
+comp_set_loc <- "./StartingDBs/CaseStudy2-data.csv"
+comp_set_no_attrition_loc <- "./StartingDBs/CaseStudy2CompSet-No-Attrition.csv"
+comp_set_no_salary_loc <- "./StartingDBs/CaseStudy2CompSet-No-Salary.xlsx"
+# Read-in data and create dataframes
+comp_set <- read.csv(comp_set_loc, header = TRUE)
+comp_set_no_attrition <- read.csv(comp_set_no_attrition_loc, header = TRUE)
+comp_set_no_salary <- read.xlsx(file=comp_set_no_salary_loc, sheetIndex = 1, 
+                                header=TRUE, stringsAsFactors = FALSE)
+```
+
+
+```{r}
+# Create data frame from the two datasets the provide "attrition"
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
