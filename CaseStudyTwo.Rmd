@@ -1,8 +1,10 @@
 ---
-title: "MSDS_6306_Case_Study_Two"
+title: "MSDS 6306 Case Study Two"
 author: "Ryan Herrin"
 date: "11/19/2021"
-output: html_document
+output: 
+  html_document:
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -29,10 +31,11 @@ library(leaflet)
 library(ggvis)
 library(pracma)
 library(kknn) # used by the nearest_neighbor engine
+library(corrplot)
 ```
 
 # Setup and read-in provided Data
-```{r}
+```{r class.source = 'fold-show'}
 # define locations within folder structure 
 comp_set_loc <- "./StartingDBs/CaseStudy2-data.csv"
 comp_set_no_attrition_loc <- "./StartingDBs/CaseStudy2CompSet-No-Attrition.csv"
@@ -45,15 +48,582 @@ comp_set_no_salary <- read.xlsx(file=comp_set_no_salary_loc, sheetIndex = 1,
 ```
 
 
-```{r}
+```{r class.source = 'fold-show'}
 # Create data frame from the two datasets the provide "attrition"
+emp_data <- full_join(comp_set, comp_set_no_salary)
 
-
+# Split data into two sets for Attrition=Yes, or Attrition=No
+emp_data_attr_yes <- filter(emp_data, emp_data$Attrition=="Yes")
+emp_data_attr_no <- filter(emp_data, emp_data$Attrition=="No")
 ```
 
+# Start EDA
+#### Categorical Variables
+Attrition, Business Travel, Department, 'Education, EducationField, Gender,
+'JobInvolvement, 'JobLevel, JobRole, 'JobSatisfaction, MaritalStatus, 
+Over18, OverTime, 'PerformanceRating, RelationshipSatisfaction, 
+'WorkLifeBalance
+
+#### Constant Variables
+Age, Daily Rate, DistanceFromHome, EnvironmentSatisfaction, HourlyRate,
+MonthlyIncome, MonthlyRate, NumCompaniesWorked, PercentSalaryHike, StockOptions, 
+TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany,YearsInCurrentRole, 
+YearsSinceLastPromotion, YearsWithCurrentManager
+
+#### Suspected Non-Factors
+ID, EmployeeCount, EmployeeNumber, StandardHours(They all seem to be 80)
+
+# Create Charts to find variables that could carry a more significant weight
+### Click "Code" on the right to show code behind charts -->
+```{r, figures-side, fig.show="hold", out.width="50%"}
+# Compare variables by Comparing the average of all employees data-set to the
+# average of emplyoees with No attrition and those with attrition
+
+# I could have writted a function to do all this but I wanted to add subtitles 
+# into the some of the charts 
+
+# Age 
+age_den <- data.frame(age=emp_data$Age, type="All_Employees")
+age_den <- rbind(age_den, data.frame(age=emp_data_attr_no$Age, type="No_Attrition"))
+age_den <- rbind(age_den, data.frame(age=emp_data_attr_yes$Age, type="Attrition"))
+# Plot Age
+ggplot(age_den, aes(x=age, fill=type)) + geom_density(alpha=0.5) + ggtitle("Age") +
+  labs(subtitle = "Mean: All Employees=36.68 | No Attrition=37.34 | Attrition=33.79")
+
+# Daily_Rate
+daily_rate_den <- data.frame(DailyRate=emp_data$DailyRate, type="All_Employees")
+daily_rate_den <- rbind(daily_rate_den, data.frame(DailyRate=emp_data_attr_no$DailyRate, type="No_Attrition"))
+daily_rate_den <- rbind(daily_rate_den, data.frame(DailyRate=emp_data_attr_yes$DailyRate, type="Attrition"))
+# Plot Daily Rate 
+ggplot(daily_rate_den, aes(x=DailyRate, fill=type)) + geom_density(alpha=0.5) + ggtitle("Daily Rate") +
+  labs(subtitle = "Mean: All-Employees=807.02 | No_Attrition=816.80 | Attrition=756.91")
+
+# Business Travel
+buss_travl_den <- data.frame(Travel=emp_data_attr_no$BusinessTravel, type="No_Attrition")
+buss_travl_den <- rbind(buss_travl_den, 
+                        data.frame(Travel=emp_data_attr_yes$BusinessTravel, type="Attrition"))
+# Plot Business Travel
+ggplot(buss_travl_den, aes(x=Travel, fill=type)) + geom_bar(position="dodge") + ggtitle("Business Travel") +
+    geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Department
+dept_den <- data.frame(dept=emp_data_attr_no$Department, type="No_Attrition")
+dept_den <- rbind(dept_den, data.frame(dept=emp_data_attr_yes$Department, type="Attrition"))
+# Plot Department Attrition vs No_Attrition
+ggplot(dept_den, aes(x=dept, fill=type)) + geom_bar(position="dodge") + ggtitle("Employee Department") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Distance from Home 
+dist_home_den <- data.frame(dist=emp_data$DistanceFromHome, type="All_Employees")
+dist_home_den <- rbind(dist_home_den, data.frame(dist=emp_data_attr_no$DistanceFromHome, type="No_Attrition"))
+dist_home_den <- rbind(dist_home_den, data.frame(dist=emp_data_attr_yes$DistanceFromHome, type="Attrition"))
+# plot Distance from home 
+ggplot(dist_home_den, aes(x=dist, fill=type)) + geom_density(alpha=0.5) + ggtitle("Distance From Home") +
+  labs(subtitle = "Mean: All-Employees=9.17 | No Attrition=8.86 | Attrition=10.74")
+
+# Education (level 1-4)
+edu_lvl_den <- data.frame(edu_lvl=emp_data_attr_no$Education, type="No_Attrition")
+edu_lvl_den <- rbind(edu_lvl_den, data.frame(edu_lvl=emp_data_attr_yes$Education, type="Attrition"))
+# Plot Education Level
+ggplot(edu_lvl_den, aes(x=edu_lvl, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Education Level") + xlab("Level of Education") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Education Field
+edu_field_den <- data.frame(edu_field=emp_data_attr_no$EducationField, type="No_Attrition")
+edu_field_den <- rbind(edu_field_den, data.frame(edu_field=emp_data_attr_yes$EducationField, type="Attrition"))
+# Plot Education Field
+ggplot(edu_field_den, aes(x=edu_field, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Education Field") + xlab("Field of Education") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Environment Satisfaction
+env_stsfctn_den <- data.frame(env_stsfctn=emp_data_attr_no$EnvironmentSatisfaction, 
+                              type="No_Attrition")
+env_stsfctn_den <- rbind(env_stsfctn_den, data.frame(env_stsfctn=emp_data_attr_yes$EnvironmentSatisfaction, 
+                                                     type="Attrition"))
+# Plot Env Satisfaction
+ggplot(env_stsfctn_den, aes(x=env_stsfctn, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Environment Satisfaction") + xlab("Env Satisfaction") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# gender
+gender_den <- data.frame(gender=emp_data_attr_no$Gender, type="No_Attrition")
+gender_den <- rbind(gender_den, data.frame(gender=emp_data_attr_yes$Gender, type="Attrition"))
+# Plot gender
+ggplot(gender_den, aes(x=gender, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Gender") + xlab("Gender") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Hourly Rate 
+hr_rate_den <- data.frame(hr_rate=emp_data_attr_no$HourlyRate, type="No_Attrition")
+hr_rate_den <- rbind(hr_rate_den, data.frame(hr_rate=emp_data_attr_yes$HourlyRate, type="Attrition"))
+# plot Hourly Rate  -> Not sure this variable will be as usefull
+ggplot(hr_rate_den, aes(x=hr_rate, fill=type)) + geom_density(alpha=0.5) + ggtitle("Hourly Rate") +
+  labs(subtitle = "Mean: No Attrition=65.70 | Attrition=66.55")
+
+# Job Involvement 
+job_involve_den <- data.frame(job_involve=emp_data_attr_no$JobInvolvement, type="No_Attrition")
+job_involve_den <- rbind(job_involve_den, data.frame(job_involve=emp_data_attr_yes$JobInvolvement, 
+                                                     type="Attrition"))
+# Plot Job Involvment 
+ggplot(job_involve_den, aes(x=job_involve, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Job Involvement") + xlab("job_involvement") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Job Level 
+job_lvl_den <- data.frame(job_lvl=emp_data_attr_no$JobLevel, type="No_Attrition")
+job_lvl_den <- rbind(job_lvl_den, data.frame(job_lvl=emp_data_attr_yes$JobLevel, type="Attrition"))
+# Plot Job Level
+ggplot(job_lvl_den, aes(x=job_lvl, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Job Level") + xlab("Job Level") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Job Role
+job_role_den <- data.frame(job_role=emp_data_attr_no$JobRole, type="No_Attrition")
+job_role_den <- rbind(job_role_den, data.frame(job_role=emp_data_attr_yes$JobRole, type="Attrition"))
+# Plot Job Role
+ggplot(job_role_den, aes(x=job_role, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Job Role") + xlab("Job Role") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2) +
+  theme(axis.text.x = element_text(angle = 90, size = 5))
+
+# Job Satisfation
+job_sat_den <- data.frame(job_sat=emp_data_attr_no$JobSatisfaction, type="No_Attrition")
+job_sat_den <- rbind(job_sat_den, data.frame(job_sat=emp_data_attr_yes$JobSatisfaction, type="Attrition"))
+# Plot Satisfaction
+ggplot(job_sat_den, aes(x=job_sat, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Job Satisfaction") + xlab("Job Satisfaction") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Marital Status
+marital_stat_den <- data.frame(marital_stat=emp_data_attr_no$MaritalStatus, type="No_Attrition")
+marital_stat_den <- rbind(marital_stat_den, data.frame(marital_stat=emp_data_attr_yes$MaritalStatus,
+                                                       type="Attrition"))
+# Marital Status 
+ggplot(marital_stat_den, aes(x=marital_stat, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Marital Status") + xlab("Marital Status") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Monthly Rate 
+mnth_rate_den <- data.frame(mnth_rate=emp_data_attr_no$MonthlyRate, type="No_Attrition")
+mnth_rate_den <- rbind(mnth_rate_den, data.frame(mnth_rate=emp_data_attr_yes$MonthlyRate, type="Attrition"))
+# plot Monthly Rate 
+ggplot(mnth_rate_den, aes(x=mnth_rate, fill=type)) + geom_density(alpha=0.5) + ggtitle("Monthly Rate") +
+  labs(subtitle = "Mean: No Attrition=14274.31 | Attrition=14219.31")
+
+# Number of Companies Worked for 
+num_of_comp_den <- data.frame(num_of_comp=emp_data_attr_no$NumCompaniesWorked, type="No_Attrition")
+num_of_comp_den <- rbind(num_of_comp_den, data.frame(num_of_comp=emp_data_attr_yes$NumCompaniesWorked,
+                                                       type="Attrition"))
+# Plot number of companies worked for 
+ggplot(num_of_comp_den, aes(x=num_of_comp, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Number of Companies Worked for") + xlab("Number of Companies Worked for") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2) 
+
+# Overtime
+ot_den <- data.frame(ot=emp_data_attr_no$OverTime, type="No_Attrition")
+ot_den <- rbind(ot_den, data.frame(ot=emp_data_attr_yes$OverTime, type="Attrition"))
+# Plot Overtime 
+ggplot(ot_den, aes(x=ot, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Overtime") + xlab("Overtime") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Percentage of Salary Hike 
+slry_hike_den <- data.frame(slry_hike=emp_data_attr_no$PercentSalaryHike, type="No_Attrition")
+slry_hike_den <- rbind(slry_hike_den, data.frame(slry_hike=emp_data_attr_yes$PercentSalaryHike, 
+                                                 type="Attrition"))
+# plot Percentage of Salary Hike ## Not as impactfull as I thought  
+ggplot(slry_hike_den, aes(x=slry_hike, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Percentage Salary Increase") +
+  labs(subtitle = "Mean: No Attrition=15.23 | Attrition=15.14")
+
+# Relationship Satisfaction (With manager??)
+rel_satfctn_den <- data.frame(rel_satfct=emp_data_attr_no$RelationshipSatisfaction, type="No_Attrition")
+rel_satfctn_den <- rbind(rel_satfctn_den, data.frame(rel_satfct=emp_data_attr_yes$RelationshipSatisfaction, 
+                                                     type="Attrition"))
+# Plot Relationship Satisfaction 
+ggplot(rel_satfctn_den, aes(x=rel_satfct, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Relationship Satisfaction") + xlab("Relationship Satisfaction") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# StockOptionLevel
+stck_opt_den <- data.frame(stck_opt=emp_data_attr_no$StockOptionLevel, type="No_Attrition")
+stck_opt_den <- rbind(stck_opt_den, data.frame(stck_opt=emp_data_attr_yes$StockOptionLevel, 
+                                                     type="Attrition"))
+# Plot StockOptionLevel
+ggplot(stck_opt_den, aes(x=stck_opt, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Stock Option Level") + xlab("StockOptionLevel") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Total Working Years 
+ttl_wrk_yrs_den <- data.frame(ttl_wrk_yrs=emp_data_attr_no$TotalWorkingYears, type="No_Attrition")
+ttl_wrk_yrs_den <- rbind(ttl_wrk_yrs_den, data.frame(ttl_wrk_yrs=emp_data_attr_yes$TotalWorkingYears, 
+                                                 type="Attrition"))
+# plot Total working years   
+ggplot(ttl_wrk_yrs_den, aes(x=ttl_wrk_yrs, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Total Working Years") +
+  labs(subtitle = "Mean: No Attrition=11.46 | Attrition=8.49")
+
+# Training Times Last Year 
+train_time_den <- data.frame(train_time=emp_data_attr_no$TrainingTimesLastYear, type="No_Attrition")
+train_time_den <- rbind(train_time_den, data.frame(train_time=emp_data_attr_yes$TrainingTimesLastYear, 
+                                                     type="Attrition"))
+# Plot Training Times Last Year
+ggplot(train_time_den, aes(x=train_time, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Last Years Training Times") + xlab("TrainingTimesLastYear") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Work Life Balance 
+wrk_life_den <- data.frame(wrk_life=emp_data_attr_no$WorkLifeBalance, type="No_Attrition")
+wrk_life_den <- rbind(wrk_life_den, data.frame(wrk_life=emp_data_attr_yes$WorkLifeBalance, 
+                                                     type="Attrition"))
+# Plot Work Life Balance 
+ggplot(wrk_life_den, aes(x=wrk_life, fill=type)) + geom_bar(position="dodge") + 
+  ggtitle("Work Life Balance") + xlab("Work Life Balance") +
+  geom_text(aes(label=..count..), position = position_dodge(.9), stat = "count", vjust = -.2)
+
+# Years At Company 
+yrs_at_comp_den <- data.frame(yrs_at_comp=emp_data_attr_no$YearsAtCompany, type="No_Attrition")
+yrs_at_comp_den <- rbind(yrs_at_comp_den, data.frame(yrs_at_comp=emp_data_attr_yes$YearsAtCompany, 
+                                                     type="Attrition"))
+# Plot Years At Company  
+ggplot(yrs_at_comp_den, aes(x=yrs_at_comp, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Years at company") +
+  labs(subtitle = "Mean: No Attrition=7.19 | Attrition=5.21")
+
+# Years in current role
+yrs_in_role_den <- data.frame(yrs_in_role=emp_data_attr_no$YearsInCurrentRole, type="No_Attrition")
+yrs_in_role_den <- rbind(yrs_in_role_den, data.frame(yrs_in_role=emp_data_attr_yes$YearsInCurrentRole, 
+                                                     type="Attrition"))
+# Plot Years in current role  
+ggplot(yrs_in_role_den, aes(x=yrs_in_role, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Years in current role") +
+  labs(subtitle = "Mean: No Attrition=4.46 | Attrition=2.85")
+
+# years since last promotion
+last_prmtn_den <- data.frame(last_prmtn=emp_data_attr_no$YearsSinceLastPromotion, type="No_Attrition")
+last_prmtn_den <- rbind(last_prmtn_den, 
+                        data.frame(last_prmtn=emp_data_attr_yes$YearsSinceLastPromotion, type="Attrition"))
+# Plot Years since last promotion  
+ggplot(last_prmtn_den, aes(x=last_prmtn, fill=type)) + geom_boxplot() + 
+  ggtitle("Years since last promotion")
+
+# Years with current manager 
+yrs_cur_mngr_den <- data.frame(yrs_cur_mngr=emp_data_attr_no$YearsWithCurrManager, type="No_Attrition")
+yrs_cur_mngr_den <- rbind(yrs_cur_mngr_den, 
+                          data.frame(yrs_cur_mngr=emp_data_attr_yes$YearsWithCurrManager, 
+                                                     type="Attrition"))
+# Plot Years with current manager   
+ggplot(yrs_cur_mngr_den, aes(x=yrs_cur_mngr, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Years with current manager") +
+  labs(subtitle = "Mean: No Attrition=4.29 | Attrition=2.83")
+
+ 
+# Years with current manager 
+monthly_inc_den <- data.frame(monthly_inc=emp_data_attr_no$MonthlyIncome, type="No_Attrition")
+monthly_inc_den <- rbind(monthly_inc_den, 
+                          data.frame(monthly_inc=emp_data_attr_yes$MonthlyIncome, type="Attrition"))
+# Plot Monthly Income                                        
+ggplot(monthly_inc_den, aes(x=monthly_inc, fill=type)) + geom_density(alpha=0.5) + 
+  ggtitle("Monthly Income") +
+  labs(subtitle = "Mean: No Attrition=6,702.00 | Attrition=4,764.79")
+#tmp_no <-  emp_data_attr_no %>% filter(!is.na(MonthlyIncome))
+#tmp_yes <-  emp_data_attr_yes %>% filter(!is.na(MonthlyIncome))
+#mean(tmp_no$MonthlyIncome)
+#mean(tmp_yes$MonthlyIncome)
+```
+
+# Notes from Initial Variables 
++ All percentags are for those who have Attrition 
+
+### Age
++ Mean -> Attrition: 33.79 | No-Attrition: 37.34 
++ The age of employees is notably younger 
+
+### Daily Rate 
++ Mean -> Attrition: 756.91, No-Attrition: 816.80 
++ The daily rate is lower for those with attrition
+
+### Business Travel 
++ Non-Travel: 9.3% 
++ Travel-Frequently: 24.54% 
++ Travel-Rarely: 15.14% 
++ Seems those who have to travel frequently have a more likelyhood of attrition
+
+### Employee Department 
++ HR: 17.3% 
++ R&D: 14.23%
++ Sales: 20.49%
++ Those in Sales and HR have a little higher attrition rate
+
+### Distance from Home
++ Mean -> Attrition: 10.74 | No-Attrition: 8.86
++ Those who lived closer to work had a lower chance of Attrition
++ A majority of those with no attrition lived within 5 miles 
+
+### Education Level
++ 1: 18.84%
++ 2: 18.03%
++ 3: 16.33%
++ 4: 14.60%
++ 5: 10.81%
++ These all seem to fall in line with eachother 
++ The only difference is the level 5 education with a small sample size
++ Not sure this values carries a big enough wieght to be used effectively
+
+### Education Field 
++ HR: 25%
++ Life Science: 15% 
++ Marketing: 19.7%
++ Medical: 14.86%
++ Other: 14.29%
++ Technical Degree: 22.55
++ Seems HR, Marketing, and Tech Degrees have the most with with attrition
+
+### Environment Satisfaction 
++ 1: 25.88%
++ 2: 14.29%
++ 3: 14.16%
++ 4: 13.69%
++ As Env satisfaction goes up, attrition goes down (No Surprise there)
+
+### Gender 
++ Male: 8.94% 
++ Female: 17.61%
++ Looks like females have more attrition
++ Any reason why? Could be based on other factors? 
+
+### Hourly Rate 
++ Mean -> Attrition: 66.55 | No-Attrition: 65.70
++ Looking at the chart doesn't reveal much
++ Potentially not going to use this data
+
+### Job Involvement 
++ 1: 39.68%
++ 2: 19.14%
++ 3: 14.1%
++ 4: 9.17%
++ This is a heavy weight! Low job involvement is something to look at 
+
+### Job Level 
++ 1: 26.32%
++ 2: 9.53%
++ 3: 14.36%
++ 4: 5.26%
++ 5: 10.87%
++ Levels 3 and 5 have a higher rate, but level 1 stands above the rest 
+
+### Job Role 
++ Healthcare Rep: 7.84%
++ HR: 20.45%
++ Lab Tech: 22.55%
++ Manager: 6.94%
++ Manufacturing Dir: 7.02%
++ Research Dir: 3.23%
++ Research Scientist: 17.32%
++ Sales Exec: 15.99%
++ Sales Rep: 41.66%
++ Highest attrition goes to Sales Rep with a whopping 41.66% attrition
++ Honorable mentions go to HR, Lab Techs, Research Scientest, and \
+sales execs
+
+### Job Satisfaction
++ 1: 22.03%
++ 2: 16.74%
++ 3: 17.48%
++ 4: 11.26%
++ Slight up-tick when the job satisfaction is at a 1
+
+### Marital Status 
++ Divorced: 9.16%
++ Married: 13.21%
++ Single: 26.17%
++ Personal opinion leads me to think that the reason Single employees have a \
+higher attrition could be due having the flexibility of switching careers \
+without having to be restricted (respectively) by family. 
+
+### Monthly Rate
++ Mean -> Attrition: 14274.31 | No-Attrition: 14274.31
++ This more or less follows the Hourly rate patteren and I fail to see why \
+this should be included for analysis when we have other wage info
++ What is the rate even representitive of; productivity, money??
+
+### Number of Companies Worked for before
++ 0: 11.5%, 1: 18.4%, 2: 12.5%, 3: 10.32%, 4: 10.91%, 5: 24.1%, 6: 25.9%, \
+7: 23.8%, 8: 12.5%, 9: 25.0%
++ Noticable increase in attrition as employees have more previous jobs
+
+### Overtime 
++ No: 10.1%
++ Yes: 32.32%
++ Big increase in Attrition when overtime is involved 
+
+### Percentage Salary Increase 
++ Mean-> Attrition: 15.14 | No-Attrition: 15.23
++ While the means are roughly the same the density chart shows a heavy right \
+skew and where the salary hike is less than 15% the attrition is much higher
+
+### Relationship Satisfaction 
++ 1: 20.52%
++ 2: 15.66%
++ 3: 14.33%
++ 4: 16.03%
++ Not the biggest contribution, but enough to provide a push towards attrition
+
+### Stock Option Level
++ 0: 25.2%
++ 1: 9.5%
++ 2: 5.7%
++ 3: 19.12%
++ I'm not sure what to make of this, but I will assume that young employees \
+aren't eligable to get stock option. Could be very expensive to offer though.
+
+### Percentage Salary Increases 
++ Mean-> Attrition: 8.49 | No-Attrition: 11.46
++ Well, no surprise here 
+
+### Training time from last year
++ 0: 21.4%, 1: 12.7%, 2: 19.0%, 3: 13.7%, 4: 22.68%, 5: 13.1%, 6: 9.6%
++ Data doesn't seem to be too specific 
++ I would like to test the training times of new (>2years) emlpoyees 
+
+### Work life Balance 
++ 1: 31.8%
++ 2: 16.5%
++ 3: 14.9%
++ 4: 16.13%
++ Again not really a surprise 
+
+### Years at company 
++ Mean-> Attrition: 5.21 | No-Attrition: 7.19
++ Attrition really spikes with years less that 7
+
+### Years in Current Role
++ Mean-> Attrition: 2.85 | No-Attrition: 4.46
++ Much like the "years at company" it follows the same pattern
++ Although big drop off after 5 years, small spike at 7 and drop off again
+
+### Years since last promotion
++ The mean of the two stayed releativly the same, but attrition seemed to \
+stay in the 0-2 range 
+
+### Years with Current Manager 
++ Mean-> Attrition: 2.83 | No-Attrition: 4.29
++ Follows some pattern as other time based charts
+
+### Monthly Income
++ Mean-> Attrition: 4,764.79 | No-Attrition: 6,702.00 
++ Those with attrition has a much lower income
++ Need to decide how to handle this data since this carries a lot of weight \
+and the data is missing for 300 observations 
+
+# Clean-Up Data 
+```{r class.source = 'fold-show'}
+## Cleanup some variables to free space and clutter 
+rm(list=c("age_den", "daily_rate_den", "buss_travl_den", "dept_den", 
+          "dist_home_den", "edu_lvl_den", "edu_field_den", "env_stsfctn_den",
+          "gender_den", "hr_rate_den", "job_involve_den", "job_lvl_den", 
+          "job_role_den", "job_sat_den", "marital_stat_den", "mnth_rate_den",
+          "num_of_comp_den", "ot_den", "slry_hike_den", "rel_satfctn_den", 
+          "stck_opt_den", "ttl_wrk_yrs_den", "train_time_den", "wrk_life_den",
+          "yrs_at_comp_den", "yrs_in_role_den", "last_prmtn_den", 
+          "yrs_cur_mngr_den", "monthly_inc_den"))
+```
+
+# Normalize the Data
+The goal is to normalize all the data to get more accurate models
+```{r class.source = 'fold-show'}
+# Create New data frame to manipulate without changing original data
+emp_data_norm <- emp_data
+
+# Remove Columns we suspect don't have an impact 
+# ID, EmployeeCount, EmployeeNumber, StandardHours, Over18
+emp_data_norm <- subset(emp_data_norm, select=-c(ID, EmployeeCount,
+                        EmployeeNumber, StandardHours, Over18))
+
+# One with No salary 
+emp_data_norm_no_salary <- subset(emp_data_norm, select=-c(MonthlyIncome))
+
+# Create normalization function for continouse varibales
+min_max_norm <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# Apply normilization to constant variables first (1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30)
+emp_data_norm_no_salary_const <- as.data.frame(lapply(emp_data_norm_no_salary[c(
+  1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
+  )], min_max_norm))
+
+# Create a data frame with only the categorical data 
+emp_data_norm_no_salary_cat <- subset(emp_data_norm_no_salary, select=-c(
+  1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
+))
+
+CategoryToPercent <- function(df) {
+  # Function that will transform each catigorical value into percentages based on its relation to attrition
+  # start through going into each column ignoring attrition 
+  df <- df
+  
+  for(col in 2:ncol(df)) {
+    tmp_count <- count(df[col])
+    colnames(tmp_count) <- c("x", "freq") # rename columns to make them standard
+    
+    for(val in 1:length(tmp_count$x)) {
+      # Get number of rows that have the val with a Yes for attrition
+      count_attrition <- nrow(filter(df, df[1]=="Yes" & df[col]==tmp_count$x[val]))
+      # Calculate percentage 
+      percent_attrtion <- (count_attrition / tmp_count$freq[val])
+      
+      # Now lets make the change to the data to replace the data frame 
+      df[col] <- replace(df[col], df[col]==tmp_count$x[val], percent_attrtion)
+    }
+  }
+  return(df)
+}
+  
+emp_data_norm_no_salary_cat <- CategoryToPercent(emp_data_norm_no_salary_cat)
+
+### Debug ###
+test_cat <- emp_data_norm_no_salary_cat
+### END Debug ###
+
+# Changes Attrition to 1's and 0's
+# No
+emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
+  emp_data_norm_no_salary_cat$Attrition=="No", 0)
+# Yes
+emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
+  emp_data_norm_no_salary_cat$Attrition=="Yes", 1)
 
 
+# need to add ID's back to the data to be able to merge back
+# Data does not move and integretiy is still intact 
+emp_data_norm_no_salary_cat$ID <- emp_data$ID
+emp_data_norm_no_salary_const$ID <- emp_data$ID
 
+# Final data set, normailized values, no-salary information
+final_normal_no_salary <- emp_data_norm_no_salary_cat
+final_normal_no_salary <- merge(final_normal_no_salary, emp_data_norm_no_salary_const, by="ID")
+# remove ID
+final_normal_no_salary <- subset(final_normal_no_salary, select=-c(ID))
+# Change all values to numeric 
+final_normal_no_salary <- as.data.frame(lapply(final_normal_no_salary, as.numeric))
+
+
+#######################################Test#######################################
+test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="No", 0)
+test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="Yes", 1)
+test_cat <- as.data.frame(lapply(test_cat, as.numeric))
+test_cat <- as.data.frame(lapply(emp_data_norm_no_salary[c(1:19)], min_max_norm))
+```
+
+# Correlation
+```{r class.source = 'fold-show', fig.width=10, fig.height=10}
+# Analyze some correlation charts to find trends
+corr_data <- cor(final_normal_no_salary)
+corrplot(corr_data, method='square', type='lower', diag=FALSE)
+```
 
 
 
