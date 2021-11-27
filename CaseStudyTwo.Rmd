@@ -40,6 +40,7 @@ library(corrplot)
 comp_set_loc <- "./StartingDBs/CaseStudy2-data.csv"
 comp_set_no_attrition_loc <- "./StartingDBs/CaseStudy2CompSet-No-Attrition.csv"
 comp_set_no_salary_loc <- "./StartingDBs/CaseStudy2CompSet-No-Salary.xlsx"
+
 # Read-in data and create dataframes
 comp_set <- read.csv(comp_set_loc, header = TRUE)
 comp_set_no_attrition <- read.csv(comp_set_no_attrition_loc, header = TRUE)
@@ -47,11 +48,98 @@ comp_set_no_salary <- read.xlsx(file=comp_set_no_salary_loc, sheetIndex = 1,
                                 header=TRUE, stringsAsFactors = FALSE)
 ```
 
+# Reusable Functions
+```{r class.source = 'fold-show'}
+# Create normalization function for continouse varibales
+min_max_norm <- function(x) {(x - min(x)) / (max(x) - min(x))}
+```
 
+# Use linear regression model to predict salary for the data set with no salary
+```{r class.source = 'fold-show'}
+# Columns that could be used to determine MonthlyIncome[20]
+# DailyRate[5], Education[8], Gender[13] "unfortuantly prob a factor", HourlyRate[9], 
+# JobInvolvement[10], JobLevel[11], MonthlyRate[21], TotalWorkingYears[30], YearsAtCompany[33],
+# YearsInCurrentRole[34]
+
+# Create DataFrame 
+income_pred_data <- subset(comp_set, select = c(MonthlyIncome, DailyRate, Education, Gender, HourlyRate,
+                                       JobInvolvement, JobLevel, MonthlyRate, TotalWorkingYears,
+                                       YearsAtCompany, YearsInCurrentRole))
+# Replace Gender with 0 and 1
+income_pred_data$Gender <- replace(income_pred_data$Gender, income_pred_data$Gender=="Male", 0)
+income_pred_data$Gender <- replace(income_pred_data$Gender, income_pred_data$Gender=="Female", 1)
+
+# Create a normalized version to create correlation table 
+income_pred_data <- as.data.frame(lapply(income_pred_data, as.numeric))
+income_pred_data_norm <- as.data.frame(lapply(income_pred_data[c(2:11)], min_max_norm))
+income_pred_data_norm$MonthlyIncome <- income_pred_data$MonthlyIncome
+
+# Plot Correlation 
+income_pred_data_cor <- cor(income_pred_data_norm)
+corrplot(income_pred_data_cor)
+
+# Based on the chart these are the categories that provide little to no-impact
+# DailyRate, HourlyRate, and JobInvolvement(little surprisng)
+
+# Create formula outside of the model creation because it can't pick up the Env
+pred_fx <- as.formula(MonthlyIncome ~ JobLevel + TotalWorkingYears + YearsAtCompany + 
+                       YearsInCurrentRole + Education + MonthlyRate + Gender)
+
+# Creating this Linear model 
+income_pred_data_model <- lm(pred_fx, data=income_pred_data_norm)
+
+# Print out summary of our model
+summary(income_pred_data_model)
+
+# Print out confidence interval of model
+confint(income_pred_data_model, conf.level=0.95)
+
+# Create a prediction using original normalized data 
+prediction <- as.data.frame(predict(income_pred_data_model, newdata=income_pred_data_norm))
+colnames(prediction) <-c("MonthlyIncome")
+
+# Create data frame to compare original data to the results 
+compare_predictions <- data.frame(Original=income_pred_data_norm$MonthlyIncome, 
+                                  Predicted=prediction$MonthlyIncome)
+
+# Create column with difference in percentage
+compare_predictions$PercentDifference <- with(compare_predictions, 
+                                              abs((Original-Predicted)/(Original+Predicted)))
+
+# Print summary of results 
+summary(compare_predictions$PercentDifference)
+# On average my model predicts Monthly Income with a mean difference of 9%
+# and a median of 7%. Besides a couple high max values this model isn't bad. 
+
+# Now lets apply this model to predict to income for the no_salary_data
+# Create data frame to temporarly use 
+emp_salary_predict <- subset(comp_set_no_salary, select=c(JobLevel, TotalWorkingYears, YearsAtCompany, 
+                        YearsInCurrentRole,Education, MonthlyRate, Gender))
+# "Normalize" the data 
+# Assign Gender a 1 or 0
+emp_salary_predict$Gender <- replace(emp_salary_predict$Gender, emp_salary_predict$Gender=="Male", 0)
+emp_salary_predict$Gender <- replace(emp_salary_predict$Gender, emp_salary_predict$Gender=="Female", 1)
+# Changes columns to numeric
+emp_salary_predict <- as.data.frame(lapply(emp_salary_predict, as.numeric))
+# Apply normalization function to data 
+emp_salary_predict <- as.data.frame(lapply(emp_salary_predict[1:7], min_max_norm))
+# Create data frame with predictions 
+no_salary_prediction <- as.data.frame(predict(income_pred_data_model, newdata=emp_salary_predict))
+# Rename column to make it easier to merge back in 
+colnames(no_salary_prediction) <-c("MonthlyIncome")
+
+# Add the new column back to the no_salary data 
+comp_set_no_salary$MonthlyIncome <- no_salary_prediction$MonthlyIncome
+```
+
+# Combine Data Sets for Analysis 
 ```{r class.source = 'fold-show'}
 # Create data frame from the two datasets the provide "attrition"
 emp_data <- full_join(comp_set, comp_set_no_salary)
+```
 
+# Split Data for Attrtion EDA
+```{r class.source = 'fold-show'}
 # Split data into two sets for Attrition=Yes, or Attrition=No
 emp_data_attr_yes <- filter(emp_data, emp_data$Attrition=="Yes")
 emp_data_attr_no <- filter(emp_data, emp_data$Attrition=="No")
@@ -327,11 +415,7 @@ monthly_inc_den <- rbind(monthly_inc_den,
 # Plot Monthly Income                                        
 ggplot(monthly_inc_den, aes(x=monthly_inc, fill=type)) + geom_density(alpha=0.5) + 
   ggtitle("Monthly Income") +
-  labs(subtitle = "Mean: No Attrition=6,702.00 | Attrition=4,764.79")
-#tmp_no <-  emp_data_attr_no %>% filter(!is.na(MonthlyIncome))
-#tmp_yes <-  emp_data_attr_yes %>% filter(!is.na(MonthlyIncome))
-#mean(tmp_no$MonthlyIncome)
-#mean(tmp_yes$MonthlyIncome)
+  labs(subtitle = "Mean: No Attrition=6630.38 | Attrition=4844.37")
 ```
 
 # Notes from Initial Variables 
@@ -513,10 +597,8 @@ stay in the 0-2 range
 + Follows some pattern as other time based charts
 
 ### Monthly Income
-+ Mean-> Attrition: 4,764.79 | No-Attrition: 6,702.00 
++ Mean-> Attrition: 4,844.37 | No-Attrition: 6,630.38 
 + Those with attrition has a much lower income
-+ Need to decide how to handle this data since this carries a lot of weight \
-and the data is missing for 300 observations 
 
 # Clean-Up Data 
 ```{r class.source = 'fold-show'}
@@ -545,11 +627,6 @@ emp_data_norm <- subset(emp_data_norm, select=-c(ID, EmployeeCount,
 # One with No salary 
 emp_data_norm_no_salary <- subset(emp_data_norm, select=-c(MonthlyIncome))
 
-# Create normalization function for continouse varibales
-min_max_norm <- function(x) {
-  (x - min(x)) / (max(x) - min(x))
-}
-
 # Apply normilization to constant variables first (1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30)
 emp_data_norm_no_salary_const <- as.data.frame(lapply(emp_data_norm_no_salary[c(
   1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
@@ -560,69 +637,14 @@ emp_data_norm_no_salary_cat <- subset(emp_data_norm_no_salary, select=-c(
   1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
 ))
 
-CategoryToPercent <- function(df) {
-  # Function that will transform each catigorical value into percentages based on its relation to attrition
-  # start through going into each column ignoring attrition 
-  df <- df
-  
-  for(col in 2:ncol(df)) {
-    tmp_count <- count(df[col])
-    colnames(tmp_count) <- c("x", "freq") # rename columns to make them standard
-    
-    for(val in 1:length(tmp_count$x)) {
-      # Get number of rows that have the val with a Yes for attrition
-      count_attrition <- nrow(filter(df, df[1]=="Yes" & df[col]==tmp_count$x[val]))
-      # Calculate percentage 
-      percent_attrtion <- (count_attrition / tmp_count$freq[val])
-      
-      # Now lets make the change to the data to replace the data frame 
-      df[col] <- replace(df[col], df[col]==tmp_count$x[val], percent_attrtion)
-    }
-  }
-  return(df)
-}
-  
-emp_data_norm_no_salary_cat <- CategoryToPercent(emp_data_norm_no_salary_cat)
 
-### Debug ###
-test_cat <- emp_data_norm_no_salary_cat
-### END Debug ###
-
-# Changes Attrition to 1's and 0's
-# No
-emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
-  emp_data_norm_no_salary_cat$Attrition=="No", 0)
-# Yes
-emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
-  emp_data_norm_no_salary_cat$Attrition=="Yes", 1)
-
-
-# need to add ID's back to the data to be able to merge back
-# Data does not move and integretiy is still intact 
-emp_data_norm_no_salary_cat$ID <- emp_data$ID
-emp_data_norm_no_salary_const$ID <- emp_data$ID
-
-# Final data set, normailized values, no-salary information
-final_normal_no_salary <- emp_data_norm_no_salary_cat
-final_normal_no_salary <- merge(final_normal_no_salary, emp_data_norm_no_salary_const, by="ID")
-# remove ID
-final_normal_no_salary <- subset(final_normal_no_salary, select=-c(ID))
-# Change all values to numeric 
-final_normal_no_salary <- as.data.frame(lapply(final_normal_no_salary, as.numeric))
-
-
-#######################################Test#######################################
-test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="No", 0)
-test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="Yes", 1)
-test_cat <- as.data.frame(lapply(test_cat, as.numeric))
-test_cat <- as.data.frame(lapply(emp_data_norm_no_salary[c(1:19)], min_max_norm))
 ```
 
 # Correlation
 ```{r class.source = 'fold-show', fig.width=10, fig.height=10}
 # Analyze some correlation charts to find trends
-corr_data <- cor(final_normal_no_salary)
-corrplot(corr_data, method='square', type='lower', diag=FALSE)
+#corr_data <- cor(final_normal_no_salary)
+#corrplot(corr_data, method='square', type='lower', diag=FALSE)
 ```
 
 
