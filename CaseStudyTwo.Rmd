@@ -109,7 +109,14 @@ compare_predictions$PercentDifference <- with(compare_predictions,
 # Print summary of results 
 summary(compare_predictions$PercentDifference)
 # On average my model predicts Monthly Income with a mean difference of 9%
-# and a median of 7%. Besides a couple high max values this model isn't bad. 
+# and a median of 7%. Besides a couple high max values this model isn't bad.
+
+# Change compare_preduictions$original to a numeric to work with rmse()
+compare_predictions$Predicted <- as.numeric(compare_predictions$Predicted)
+
+# Generate the ROOT MEAN SQUARE (RMSE)
+pred_rsme <- sqrt(mean((compare_predictions$Original - compare_predictions$Predicted)^2))
+paste("The RMSE = ", as.character(pred_rsme), sep=' ')
 
 # Now lets apply this model to predict to income for the no_salary_data
 # Create data frame to temporarly use 

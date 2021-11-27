@@ -290,9 +290,16 @@ summary(compare_predictions$PercentDifference)</code></pre>
 <pre><code>##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
 ## 0.0002928 0.0343743 0.0776199 0.0988025 0.1428431 0.5374391</code></pre>
 <pre class="r fold-show"><code># On average my model predicts Monthly Income with a mean difference of 9%
-# and a median of 7%. Besides a couple high max values this model isn&#39;t bad. 
+# and a median of 7%. Besides a couple high max values this model isn&#39;t bad.
 
-# Now lets apply this model to predict to income for the no_salary_data
+# Change compare_preduictions$original to a numeric to work with rmse()
+compare_predictions$Predicted &lt;- as.numeric(compare_predictions$Predicted)
+
+# Generate the ROOT MEAN SQUARE (RMSE)
+pred_rsme &lt;- sqrt(mean((compare_predictions$Original - compare_predictions$Predicted)^2))
+paste(&quot;The RMSE = &quot;, as.character(pred_rsme), sep=&#39; &#39;)</code></pre>
+<pre><code>## [1] &quot;The RMSE =  1376.95372578543&quot;</code></pre>
+<pre class="r fold-show"><code># Now lets apply this model to predict to income for the no_salary_data
 # Create data frame to temporarly use 
 emp_salary_predict &lt;- subset(comp_set_no_salary, select=c(JobLevel, TotalWorkingYears, YearsAtCompany, 
                         YearsInCurrentRole,Education, MonthlyRate, Gender))
