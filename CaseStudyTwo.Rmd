@@ -7,6 +7,18 @@ output:
     code_folding: hide
 ---
 
++ This code is for identifiy voluntary attrition from employees that work at \
+the Frito Lay company. DDSAnalytics (my company) will deploy different \
+techniques and models to generate these predictions. 
+
+# Executive Summary 
++ Missing salary data was generated using a linear regression model
++ Common profile with attrition is young, early career, single with overtime
++ Three attributes to focus on: Job Level, Overtime, Stock Options 
++ Random Forest was the optimal Model for predicting Attrition
++ Identified 4 employees that are predicted to have attrition 
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(stringr)
@@ -926,7 +938,7 @@ comp_set_predicted_attrition <- merge(comp_set_no_attrition, rf_predict, by="ID"
 positive_attrition <- filter(comp_set_predicted_attrition, 
                                comp_set_predicted_attrition$Attrition=="Yes")
 
-positive_attrition
+positive_attrition$ID
 
 # Write Results to output folder
 write.csv(comp_set_predicted_attrition, "./Output/Attrition_Prediction_Results.csv")
@@ -934,6 +946,7 @@ write.csv(comp_set_predicted_attrition, "./Output/Attrition_Prediction_Results.c
 
 # Other Interesting Information
 ```{r}
+# Find high potential employess 
 
 ```
 

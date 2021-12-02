@@ -184,6 +184,20 @@ pre code {
 </div>
 
 
+<ul>
+<li>This code is for identifiy voluntary attrition from employees that work at<br />
+the Frito Lay company. DDSAnalytics (my company) will deploy different   techniques and models to come up with these predictions.</li>
+</ul>
+<div id="executive-summary" class="section level1">
+<h1>Executive Summary</h1>
+<ul>
+<li>Missing salary data was generated using a linear regression model</li>
+<li>Common profile with attrition is young, early career, single with overtime</li>
+<li>Three attributes to focus on: Job Level, Overtime, Stock Options</li>
+<li>Random Forest was the optimal Model for predicting Attrition</li>
+<li>Identified 4 employees that are predicted to have attrition</li>
+</ul>
+</div>
 <div id="setup-and-read-in-provided-data" class="section level1">
 <h1>Setup and read-in provided Data</h1>
 <pre class="r fold-show"><code># define locations within folder structure 
@@ -1315,6 +1329,11 @@ positive_attrition</code></pre>
 ## 2                    0       Yes
 ## 3                    2       Yes
 ## 4                    0       Yes</code></pre>
+<pre class="r"><code># Write Results to output folder
+write.csv(comp_set_predicted_attrition, &quot;./Output/Attrition_Prediction_Results.csv&quot;)</code></pre>
+</div>
+<div id="other-interesting-information" class="section level1">
+<h1>Other Interesting Information</h1>
 </div>
 
 
