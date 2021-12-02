@@ -125,8 +125,11 @@ ConvertCatToNum <- function(df) {
   # Convert Categorical Variables to numerical, but as.factor()
   df_cctm <- df
   # Attrition
-  df_cctm$Attrition[df_cctm$Attrition=="No"] <- 0
-  df_cctm$Attrition[df_cctm$Attrition=="Yes"] <- 1
+    # In case the data does not have the "Attrition" Column
+  if("Attrition" %in% names(df_cctm)) {
+    df_cctm$Attrition[df_cctm$Attrition=="No"] <- 0
+    df_cctm$Attrition[df_cctm$Attrition=="Yes"] <- 1
+  } 
   # Business Travel
   df_cctm$BusinessTravel[df_cctm$BusinessTravel=="Non-Travel"] <- 1
   df_cctm$BusinessTravel[df_cctm$BusinessTravel=="Travel_Rarely"] <- 2
@@ -189,7 +192,7 @@ income_pred_data_norm$MonthlyIncome <- income_pred_data$MonthlyIncome
 
 # Plot Correlation 
 income_pred_data_cor <- cor(income_pred_data_norm)
-corrplot(income_pred_data_cor)
+corrplot(income_pred_data_cor, title="Salary Correlation", mar=c(0,0,1,0))
 
 # Based on the chart these are the categories that provide little to no-impact
 # DailyRate, HourlyRate, and JobInvolvement(little surprisng)
@@ -683,9 +686,11 @@ skew and where the salary hike is less than 15% the attrition is much higher
 + I'm not sure what to make of this, but I will assume that young employees \
 aren't eligable to get stock option. Could be very expensive to offer though.
 
+### Total Working Years
++ Mean-> Attrition: 8.49 | No-Attrition: 11.46 
+
 ### Percentage Salary Increases 
-+ Mean-> Attrition: 8.49 | No-Attrition: 11.46
-+ Well, no surprise here 
++ Mean-> Attrition: 15.14 | No-Attrition: 15.23
 
 ### Training time from last year
 + 0: 21.4%, 1: 12.7%, 2: 19.0%, 3: 13.7%, 4: 22.68%, 5: 13.1%, 6: 9.6%
@@ -745,6 +750,7 @@ emp_data_mod_cont <- subset(emp_data_mod, select = c(Age, Attrition, DailyRate, 
                                            PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear,
                                            YearsAtCompany, YearsInCurrentRole, YearsSinceLastPromotion,
                                            YearsWithCurrManager))
+
 # Make attrition logical in emp_data_mod_cat
 emp_data_mod_cont$Attrition <- replace(emp_data_mod_cont$Attrition, 
                                       emp_data_mod_cont$Attrition=="No", as.numeric(1))
@@ -850,6 +856,7 @@ I could acheive is with a 96%-Sensitivity and 30%-Specificity
 # Random Forest
 ```{r class.source = 'fold-show'}
 set.seed(4)
+
 # Use random forest to give us a different model to compare to 
 # rf = Random Forest 
 rf_emp_data <- emp_data
@@ -886,7 +893,49 @@ rf_cm <- table(rf_emp_data_test$Attrition, rf_predict$rf_predict)
 confusionMatrix(rf_cm)
 ```
 
+# Predict Attrition
+```{r}
+# Use the best model (Random Forest) to predict attrition from the provided data
+# Create output CSV of the results 
+emp_final_pred <- comp_set_no_attrition
 
+# Like the training data, run the data through the same prep functions
+# Convert the categorical values to numbers as factors 
+emp_final_pred <- ConvertCatToNum(emp_final_pred)
+# Prepare data to keep it standardized 
+emp_final_pred <- PrepareData(emp_final_pred)
+
+# Prediction Time
+rf_final_pred <- predict(rf_model, newdata=emp_final_pred)
+rf_predict <- as.data.frame(rf_final_pred)
+
+# Replace 0's and 1's with no and yes 
+rf_predict <- transform(rf_predict, rf_final_pred=as.character(rf_final_pred))
+rf_predict$rf_final_pred[rf_predict$rf_final_pred=="0"] <- "No"
+rf_predict$rf_final_pred[rf_predict$rf_final_pred=="1"] <- "Yes"
+
+# Change Column name
+colnames(rf_predict) <- c("Attrition")
+count(rf_predict)
+
+# Add back to data 
+rf_predict$ID <- comp_set_no_attrition$ID
+comp_set_predicted_attrition <- merge(comp_set_no_attrition, rf_predict, by="ID")
+
+# Create DF of employees that predicted yes for attrition 
+positive_attrition <- filter(comp_set_predicted_attrition, 
+                               comp_set_predicted_attrition$Attrition=="Yes")
+
+positive_attrition
+
+# Write Results to output folder
+write.csv(comp_set_predicted_attrition, "./Output/Attrition_Prediction_Results.csv")
+```
+
+# Other Interesting Information
+```{r}
+
+```
 
 
 
