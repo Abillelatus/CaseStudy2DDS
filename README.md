@@ -6,7 +6,7 @@ DDSAnalytics is an analytics company that specializes in talent management solut
 Code Structure
 + /Docs           "Requirement Documentation"
 + /Output         "HTML-Knit and Attrition Results CSV"
-+ /StatingDBs     "Proivded Data Sheets and Examples"
++ /StatingDBs     "Provivded Data Sheets and Examples"
 + CaseStudy2DDS.pptx 
 + CaseStudyTwo.Rmd
 + README.md
