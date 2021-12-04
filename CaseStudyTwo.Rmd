@@ -1,11 +1,23 @@
 ---
 title: "MSDS 6306 Case Study Two"
 author: "Ryan Herrin"
-date: "11/19/2021"
+date: "12/3/2021"
 output: 
   html_document:
     code_folding: hide
 ---
+
++ This code is for identifiy voluntary attrition from employees that work at \
+the Frito Lay company. DDSAnalytics (my company) will deploy different \
+techniques and models to generate these predictions. 
+
+# Executive Summary 
++ Missing salary data was generated using a linear regression model
++ Common profile with attrition is young, early career, single with overtime
++ Three attributes to focus on: Job Level, Overtime, Stock Options 
++ Random Forest was the optimal Model for predicting Attrition
++ Identified 4 employees that are predicted to have attrition 
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -18,8 +30,6 @@ library(ggplot2)
 library(plyr) # Load first before dplyer 
 library(dplyr)
 library(tidyr)
-library(maps)
-library(mapproj)
 library(ggalt)
 library(class)
 library(caret)
@@ -32,6 +42,7 @@ library(ggvis)
 library(pracma)
 library(kknn) # used by the nearest_neighbor engine
 library(corrplot)
+library(randomForest)
 ```
 
 # Setup and read-in provided Data
@@ -40,6 +51,7 @@ library(corrplot)
 comp_set_loc <- "./StartingDBs/CaseStudy2-data.csv"
 comp_set_no_attrition_loc <- "./StartingDBs/CaseStudy2CompSet-No-Attrition.csv"
 comp_set_no_salary_loc <- "./StartingDBs/CaseStudy2CompSet-No-Salary.xlsx"
+
 # Read-in data and create dataframes
 comp_set <- read.csv(comp_set_loc, header = TRUE)
 comp_set_no_attrition <- read.csv(comp_set_no_attrition_loc, header = TRUE)
@@ -47,11 +59,222 @@ comp_set_no_salary <- read.xlsx(file=comp_set_no_salary_loc, sheetIndex = 1,
                                 header=TRUE, stringsAsFactors = FALSE)
 ```
 
+# Reusable Functions
+```{r class.source = 'fold-show'}
+# Create normalization function for continouse varibales
+min_max_norm <- function(x) {(x - min(x)) / (max(x) - min(x))}
 
+CategoryToPercent <- function(df) {
+  # Function that will transform each catigorical value into percentages based on its relation to attrition
+  # Uses the WOE method. **** Attrition Must be First Column ****
+  df <- df
+  
+  for(col in 2:ncol(df)) {
+    tmp_count <- count(df[col])
+    colnames(tmp_count) <- c("x", "freq") # rename columns to make them standard
+    
+    for(val in 1:length(tmp_count$x)) {
+      # Get number of rows that have the val with a Yes for attrition
+      count_attrition <- nrow(filter(df, df[1]=="Yes" & df[col]==tmp_count$x[val]))
+      # Calculate percentage 
+      #percent_attrtion <- (count_attrition / tmp_count$freq[val])
+      percent_attrtion <- (count_attrition / sum(tmp_count$freq))
+      # Now lets make the change to the data to replace the data frame 
+      df[col] <- replace(df[col], df[col]==tmp_count$x[val], percent_attrtion)
+    }
+  }
+  return(df)
+}
+
+InvertPercentage <- function(x) { 
+  # Invert percentage to standardize relationship between cat and cont dataframes
+  res <- (1 - x)
+  return(res)
+}
+
+PrepareData <- function(df) {
+  # Function to apply the same normaliztion methods to data that has attrition and 
+  # for the data that does not have attrition 
+  df_pd <- df
+  # Remove data that provides no statistical value 
+  df_pd <- subset(df_pd, select=-c(EmployeeCount, EmployeeNumber, Over18, StandardHours))
+  # Removing additional data due to correlation data 
+  df_pd <- subset(df_pd, select=-c(HourlyRate, MonthlyRate, PercentSalaryHike, Education,
+                                   PerformanceRating, RelationshipSatisfaction))
+  # Transform all Numeric Categoires as.numeric()
+  # Transform all Categorical data that has a number as.factor()
+  df_pd <- transform(df_pd, 
+                     Age=as.numeric(Age),
+                     BusinessTravel=as.factor(BusinessTravel), DailyRate=as.numeric(DailyRate),
+                     Department=as.factor(Department), DistanceFromHome=as.numeric(DistanceFromHome),
+                     EducationField=as.factor(EducationField), 
+                     EnvironmentSatisfaction=as.factor(EnvironmentSatisfaction),
+                     Gender=as.factor(Gender), JobInvolvement=as.factor(JobInvolvement),
+                     JobLevel=as.factor(JobLevel), JobRole=as.factor(JobRole),
+                     JobSatisfaction=as.factor(JobSatisfaction), 
+                     MaritalStatus=as.factor(MaritalStatus),
+                     MonthlyIncome=as.numeric(MonthlyIncome), 
+                     NumCompaniesWorked=as.numeric(NumCompaniesWorked),
+                     OverTime=as.factor(OverTime), StockOptionLevel=as.factor(StockOptionLevel),
+                     TotalWorkingYears=as.numeric(TotalWorkingYears),
+                     TrainingTimesLastYear=as.numeric(TrainingTimesLastYear),
+                     WorkLifeBalance=as.factor(WorkLifeBalance),
+                     YearsAtCompany=as.numeric(YearsAtCompany),
+                     YearsInCurrentRole=as.numeric(YearsInCurrentRole),
+                     YearsSinceLastPromotion=as.numeric(YearsSinceLastPromotion),
+                     YearsWithCurrManager=as.numeric(YearsWithCurrManager)
+                     )
+  
+  # In case the data does not have the "Attrition" Column
+  if("Attrition" %in% names(df_pd)) {
+    df_pd <- transform(df_pd, Attrition=as.factor(Attrition)) 
+  } 
+    
+  return(df_pd)
+}
+
+ConvertCatToNum <- function(df) {
+  # Convert Categorical Variables to numerical, but as.factor()
+  df_cctm <- df
+  # Attrition
+    # In case the data does not have the "Attrition" Column
+  if("Attrition" %in% names(df_cctm)) {
+    df_cctm$Attrition[df_cctm$Attrition=="No"] <- 0
+    df_cctm$Attrition[df_cctm$Attrition=="Yes"] <- 1
+  } 
+  # Business Travel
+  df_cctm$BusinessTravel[df_cctm$BusinessTravel=="Non-Travel"] <- 1
+  df_cctm$BusinessTravel[df_cctm$BusinessTravel=="Travel_Rarely"] <- 2
+  df_cctm$BusinessTravel[df_cctm$BusinessTravel=="Travel_Frequently"] <- 3
+  # Employee Dept
+  df_cctm$Department[df_cctm$Department=="Human Resources"] <- 1
+  df_cctm$Department[df_cctm$Department=="Research & Development"] <- 2
+  df_cctm$Department[df_cctm$Department=="Sales"] <- 3
+  # Education Field
+  df_cctm$EducationField[df_cctm$EducationField=="Human Resources"] <- 1
+  df_cctm$EducationField[df_cctm$EducationField=="Life Sciences"] <- 2
+  df_cctm$EducationField[df_cctm$EducationField=="Marketing"] <- 3
+  df_cctm$EducationField[df_cctm$EducationField=="Medical"] <- 4
+  df_cctm$EducationField[df_cctm$EducationField=="Technical Degree"] <- 5
+  df_cctm$EducationField[df_cctm$EducationField=="Other"] <- 6
+  # Gender 
+  df_cctm$Gender[df_cctm$Gender=="Male"] <- 1
+  df_cctm$Gender[df_cctm$Gender=="Female"] <- 2
+  # Job Role
+  df_cctm$JobRole[df_cctm$JobRole=="Healthcare Representative"] <- 1
+  df_cctm$JobRole[df_cctm$JobRole=="Human Resources"] <- 2
+  df_cctm$JobRole[df_cctm$JobRole=="Laboratory Technician"] <- 3
+  df_cctm$JobRole[df_cctm$JobRole=="Manager"] <- 4
+  df_cctm$JobRole[df_cctm$JobRole=="Manufacturing Director"] <- 5
+  df_cctm$JobRole[df_cctm$JobRole=="Research Director"] <- 6
+  df_cctm$JobRole[df_cctm$JobRole=="Research Scientist"] <- 7
+  df_cctm$JobRole[df_cctm$JobRole=="Sales Executive"] <- 8
+  df_cctm$JobRole[df_cctm$JobRole=="Sales Representative"] <- 9
+  # Marital Status 
+  df_cctm$MaritalStatus[df_cctm$MaritalStatus=="Single"] <- 1
+  df_cctm$MaritalStatus[df_cctm$MaritalStatus=="Married"] <- 2
+  df_cctm$MaritalStatus[df_cctm$MaritalStatus=="Divorced"] <- 3
+  # Overtime
+  df_cctm$OverTime[df_cctm$OverTime=="Yes"] <- 1
+  df_cctm$OverTime[df_cctm$OverTime=="No"] <- 0
+  
+  return(df_cctm)
+}
+```
+
+# Use linear regression model to predict salary for the data set with no salary
+```{r class.source = 'fold-show'}
+# Columns that could be used to determine MonthlyIncome[20]
+# DailyRate[5], Education[8], Gender[13] "unfortuantly prob a factor", HourlyRate[9], 
+# JobInvolvement[10], JobLevel[11], MonthlyRate[21], TotalWorkingYears[30], YearsAtCompany[33],
+# YearsInCurrentRole[34]
+
+# Create DataFrame 
+income_pred_data <- subset(comp_set, select = c(MonthlyIncome, DailyRate, Education, Gender, HourlyRate,
+                                       JobInvolvement, JobLevel, MonthlyRate, TotalWorkingYears,
+                                       YearsAtCompany, YearsInCurrentRole))
+# Replace Gender with 0 and 1
+income_pred_data$Gender <- replace(income_pred_data$Gender, income_pred_data$Gender=="Male", 0)
+income_pred_data$Gender <- replace(income_pred_data$Gender, income_pred_data$Gender=="Female", 1)
+
+# Create a normalized version to create correlation table 
+income_pred_data <- as.data.frame(lapply(income_pred_data, as.numeric))
+income_pred_data_norm <- as.data.frame(lapply(income_pred_data[c(2:11)], min_max_norm))
+income_pred_data_norm$MonthlyIncome <- income_pred_data$MonthlyIncome
+
+# Plot Correlation 
+income_pred_data_cor <- cor(income_pred_data_norm)
+corrplot(income_pred_data_cor, title="Salary Correlation", mar=c(0,0,1,0))
+
+# Based on the chart these are the categories that provide little to no-impact
+# DailyRate, HourlyRate, and JobInvolvement(little surprisng)
+
+# Create formula outside of the model creation because it can't pick up the Env
+pred_fx <- as.formula(MonthlyIncome ~ JobLevel + TotalWorkingYears + YearsAtCompany + 
+                       YearsInCurrentRole + Education + MonthlyRate + Gender)
+
+# Creating this Linear model 
+income_pred_data_model <- lm(pred_fx, data=income_pred_data_norm)
+
+# Print out summary of our model
+summary(income_pred_data_model)
+
+# Print out confidence interval of model
+confint(income_pred_data_model, conf.level=0.95)
+
+# Create a prediction using original normalized data 
+prediction <- as.data.frame(predict(income_pred_data_model, newdata=income_pred_data_norm))
+colnames(prediction) <-c("MonthlyIncome")
+
+# Create data frame to compare original data to the results 
+compare_predictions <- data.frame(Original=income_pred_data_norm$MonthlyIncome, 
+                                  Predicted=prediction$MonthlyIncome)
+
+# Create column with difference in percentage
+compare_predictions$PercentDifference <- with(compare_predictions, 
+                                              abs((Original-Predicted)/(Original+Predicted)))
+
+# Print summary of results 
+summary(compare_predictions$PercentDifference)
+# On average my model predicts Monthly Income with a mean difference of 9%
+# and a median of 7%. Besides a couple high max values this model isn't bad.
+
+# Change compare_preduictions$original to a numeric to work with rmse()
+compare_predictions$Predicted <- as.numeric(compare_predictions$Predicted)
+
+# Generate the ROOT MEAN SQUARE (RMSE)
+pred_rsme <- sqrt(mean((compare_predictions$Original - compare_predictions$Predicted)^2))
+paste("The RMSE = ", as.character(pred_rsme), sep=' ')
+
+# Now lets apply this model to predict to income for the no_salary_data
+# Create data frame to temporarly use 
+emp_salary_predict <- subset(comp_set_no_salary, select=c(JobLevel, TotalWorkingYears, YearsAtCompany, 
+                        YearsInCurrentRole,Education, MonthlyRate, Gender))
+# "Normalize" the data 
+# Assign Gender a 1 or 0
+emp_salary_predict$Gender <- replace(emp_salary_predict$Gender, emp_salary_predict$Gender=="Male", 0)
+emp_salary_predict$Gender <- replace(emp_salary_predict$Gender, emp_salary_predict$Gender=="Female", 1)
+# Changes columns to numeric
+emp_salary_predict <- as.data.frame(lapply(emp_salary_predict, as.numeric))
+# Apply normalization function to data 
+emp_salary_predict <- as.data.frame(lapply(emp_salary_predict[1:7], min_max_norm))
+# Create data frame with predictions 
+no_salary_prediction <- as.data.frame(predict(income_pred_data_model, newdata=emp_salary_predict))
+# Rename column to make it easier to merge back in 
+colnames(no_salary_prediction) <-c("MonthlyIncome")
+
+# Add the new column back to the no_salary data 
+comp_set_no_salary$MonthlyIncome <- no_salary_prediction$MonthlyIncome
+```
+
+# Combine Data Sets for Analysis 
 ```{r class.source = 'fold-show'}
 # Create data frame from the two datasets the provide "attrition"
 emp_data <- full_join(comp_set, comp_set_no_salary)
+```
 
+# Split Data for Attrtion EDA
+```{r class.source = 'fold-show'}
 # Split data into two sets for Attrition=Yes, or Attrition=No
 emp_data_attr_yes <- filter(emp_data, emp_data$Attrition=="Yes")
 emp_data_attr_no <- filter(emp_data, emp_data$Attrition=="No")
@@ -327,11 +550,7 @@ monthly_inc_den <- rbind(monthly_inc_den,
 # Plot Monthly Income                                        
 ggplot(monthly_inc_den, aes(x=monthly_inc, fill=type)) + geom_density(alpha=0.5) + 
   ggtitle("Monthly Income") +
-  labs(subtitle = "Mean: No Attrition=6,702.00 | Attrition=4,764.79")
-#tmp_no <-  emp_data_attr_no %>% filter(!is.na(MonthlyIncome))
-#tmp_yes <-  emp_data_attr_yes %>% filter(!is.na(MonthlyIncome))
-#mean(tmp_no$MonthlyIncome)
-#mean(tmp_yes$MonthlyIncome)
+  labs(subtitle = "Mean: No Attrition=6630.38 | Attrition=4844.37")
 ```
 
 # Notes from Initial Variables 
@@ -479,9 +698,11 @@ skew and where the salary hike is less than 15% the attrition is much higher
 + I'm not sure what to make of this, but I will assume that young employees \
 aren't eligable to get stock option. Could be very expensive to offer though.
 
+### Total Working Years
++ Mean-> Attrition: 8.49 | No-Attrition: 11.46 
+
 ### Percentage Salary Increases 
-+ Mean-> Attrition: 8.49 | No-Attrition: 11.46
-+ Well, no surprise here 
++ Mean-> Attrition: 15.14 | No-Attrition: 15.23
 
 ### Training time from last year
 + 0: 21.4%, 1: 12.7%, 2: 19.0%, 3: 13.7%, 4: 22.68%, 5: 13.1%, 6: 9.6%
@@ -513,10 +734,8 @@ stay in the 0-2 range
 + Follows some pattern as other time based charts
 
 ### Monthly Income
-+ Mean-> Attrition: 4,764.79 | No-Attrition: 6,702.00 
++ Mean-> Attrition: 4,844.37 | No-Attrition: 6,630.38 
 + Those with attrition has a much lower income
-+ Need to decide how to handle this data since this carries a lot of weight \
-and the data is missing for 300 observations 
 
 # Clean-Up Data 
 ```{r class.source = 'fold-show'}
@@ -531,105 +750,227 @@ rm(list=c("age_den", "daily_rate_den", "buss_travl_den", "dept_den",
           "yrs_cur_mngr_den", "monthly_inc_den"))
 ```
 
-# Normalize the Data
+# Find Correlation to Attrition
 The goal is to normalize all the data to get more accurate models
+```{r class.source = 'fold-show', fig.width=10, fig.height=11}
+# Remove columns that do not provide significance 
+emp_data_mod <- emp_data[-c(1, 10, 11, 23, 28)]
+
+# Create New data frame for continous data 
+emp_data_mod_cont <- subset(emp_data_mod, select = c(Age, Attrition, DailyRate, DistanceFromHome, 
+                                           HourlyRate,MonthlyIncome, MonthlyRate, NumCompaniesWorked, 
+                                           PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear,
+                                           YearsAtCompany, YearsInCurrentRole, YearsSinceLastPromotion,
+                                           YearsWithCurrManager))
+
+# Make attrition logical in emp_data_mod_cat
+emp_data_mod_cont$Attrition <- replace(emp_data_mod_cont$Attrition, 
+                                      emp_data_mod_cont$Attrition=="No", as.numeric(1))
+emp_data_mod_cont$Attrition <- replace(emp_data_mod_cont$Attrition, 
+                                      emp_data_mod_cont$Attrition=="Yes", as.numeric(0))
+
+# Normalize 
+emp_data_mod_cont <- as.data.frame(lapply(emp_data_mod_cont, as.numeric))
+emp_data_mod_cont <- as.data.frame(lapply(emp_data_mod_cont, min_max_norm))
+
+# Create correlation plot 
+emp_data_mod_cont_cor <- cor(emp_data_mod_cont)
+corrplot(emp_data_mod_cont_cor, method='number', title='Correlation Based on Continous Vars',
+         mar=c(0,0,1,0))
+
+# Create data frame for categorical data "Including Attrition"
+emp_data_mod_cat <- subset(emp_data_mod, select=c(Attrition, BusinessTravel, Department, Education,
+                                                  EducationField, EnvironmentSatisfaction, Gender, 
+                                                  JobInvolvement, JobLevel, JobRole, JobSatisfaction,
+                                                  MaritalStatus, OverTime, PerformanceRating, 
+                                                  RelationshipSatisfaction, StockOptionLevel, 
+                                                  WorkLifeBalance))
+# Transform with function
+emp_data_mod_cat <- CategoryToPercent(emp_data_mod_cat)
+
+# Set attrition to 1 and 0
+emp_data_mod_cat$Attrition <- replace(emp_data_mod_cat$Attrition, 
+                                      emp_data_mod_cat$Attrition=="No", as.numeric(0))
+emp_data_mod_cat$Attrition <- replace(emp_data_mod_cat$Attrition, 
+                                      emp_data_mod_cat$Attrition=="Yes", as.numeric(1))
+# Set columns to numeric if they arne't 
+emp_data_mod_cat <- as.data.frame(lapply(emp_data_mod_cat, as.numeric))
+emp_data_mod_cat <- as.data.frame(lapply(emp_data_mod_cat, InvertPercentage))
+
+# Create Correlation for categorical 
+emp_data_mod_cat_cor <- cor(emp_data_mod_cat)
+corrplot(emp_data_mod_cat_cor, method='number', title='Correlation Based on Categorical Vars', 
+         mar=c(0,0,1,0))
+
+```
+
+## Correlation Notes
+
+### Categories that make the biggest difference 
++ Age, MonthlyIncome, TotalWorkingYears, YearsAtCompany, YearsInCurrentRole, \
+YearsWithCurrManager, JobLevel, JobRole, MaritalStatus, OverTime, StockOptionLevel
+
+### Categories that make the least difference 
++ HourlyRate, MonthlyRate, PercentSalaryHike, Education, PerformanceRating, \
+RelationshipSatisfaction
+
+## Top Contendors for Attrition
++ JobLevel
++ OverTime
++ StockOptionLevel
+Since Changing Stock Options can be very expensive the 3rd place could be \
+"YearsInCurrentRole"
+
+# Testing KNN Models with different 
 ```{r class.source = 'fold-show'}
-# Create New data frame to manipulate without changing original data
-emp_data_norm <- emp_data
+set.seed(3)
+# Standardize the data the same way using a reusable data prep function I wrote
+# All prep work is done in this function
+knn_emp_data <- PrepareData(emp_data)
 
-# Remove Columns we suspect don't have an impact 
-# ID, EmployeeCount, EmployeeNumber, StandardHours, Over18
-emp_data_norm <- subset(emp_data_norm, select=-c(ID, EmployeeCount,
-                        EmployeeNumber, StandardHours, Over18))
+# Create empty train and test data frames 
+knn_emp_data_train <- data.frame()
+knn_emp_data_test <- data.frame()
 
-# One with No salary 
-emp_data_norm_no_salary <- subset(emp_data_norm, select=-c(MonthlyIncome))
+# Split Data 70/30
+num_samples_to_take <- round(as.numeric(nrow(knn_emp_data)*.7), digits=0)
+index <- sample(seq_len(nrow(knn_emp_data)), size=num_samples_to_take)
+knn_emp_data_train <- knn_emp_data[index,]
+knn_emp_data_test <- knn_emp_data[-index,]
 
-# Create normalization function for continouse varibales
-min_max_norm <- function(x) {
-  (x - min(x)) / (max(x) - min(x))
-}
+############################ KNN Model ########################################
+# Formula for Nearest_Neighbor
+knn_emp_formula <- as.formula(Attrition ~ Age + BusinessTravel + DailyRate + Department + 
+  DistanceFromHome + EducationField + EnvironmentSatisfaction + Gender + 
+  JobInvolvement + JobLevel + JobRole + JobSatisfaction + MaritalStatus +
+  MonthlyIncome + NumCompaniesWorked + OverTime + StockOptionLevel + TotalWorkingYears +
+  TrainingTimesLastYear + WorkLifeBalance + YearsAtCompany + YearsInCurrentRole +
+  YearsSinceLastPromotion + YearsWithCurrManager)
 
-# Apply normilization to constant variables first (1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30)
-emp_data_norm_no_salary_const <- as.data.frame(lapply(emp_data_norm_no_salary[c(
-  1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
-  )], min_max_norm))
+# Define K values 
+optimal_k <- 3
 
-# Create a data frame with only the categorical data 
-emp_data_norm_no_salary_cat <- subset(emp_data_norm_no_salary, select=-c(
-  1, 4, 6, 11, 17, 20, 24, 27, 28, 29, 30
-))
+# Generate Model
+attrition_model_2 <- nearest_neighbor(neighbors=optimal_k, weight_func="inv") %>%
+  set_engine("kknn") %>%
+  set_mode("classification") %>% 
+  fit(formula=knn_emp_formula, data=knn_emp_data_train)
 
-CategoryToPercent <- function(df) {
-  # Function that will transform each catigorical value into percentages based on its relation to attrition
-  # start through going into each column ignoring attrition 
-  df <- df
+# Create prediction 
+pred_grid <- attrition_model_2 %>% predict(knn_emp_data_test)
+attrition_tab_2 <- table(pred_grid$.pred_class, knn_emp_data_test$Attrition)
+confusionMatrix(attrition_tab_2)
+#################################################################################
+```
++ With many attempts at changing the k value and the formula, the best results \
+I could acheive is with a 96%-Sensitivity and 30%-Specificity
+
+# Random Forest
+```{r class.source = 'fold-show'}
+set.seed(4)
+
+# Use random forest to give us a different model to compare to 
+# rf = Random Forest 
+rf_emp_data <- emp_data
+
+# Convert the categorical values to numbers as factors 
+rf_emp_data <- ConvertCatToNum(rf_emp_data)
+# Prepare data to keep it standardized 
+rf_emp_data <- PrepareData(rf_emp_data)
+
+# Create empty train and test data frames 
+rf_emp_data_train <- data.frame()
+rf_emp_data_test <- data.frame()
+
+# Split Data 70/30
+num_samples_to_take <- round(as.numeric(nrow(rf_emp_data)*.7), digits=0)
+index <- sample(seq_len(nrow(rf_emp_data)), size=num_samples_to_take)
+rf_emp_data_train <- rf_emp_data[index,]
+rf_emp_data_test <- rf_emp_data[-index,]
+
+# Train Random Forest Model
+rf_model <- randomForest(
+  Attrition ~ .,
+  data=rf_emp_data_train
+)
+# Print Model details 
+rf_model
+
+# Predict 
+rf_predict <- predict(rf_model, newdata=rf_emp_data_test)
+rf_predict <- as.data.frame(rf_predict)
+
+# Create table for confusion Matrix
+rf_cm <- table(rf_emp_data_test$Attrition, rf_predict$rf_predict)
+confusionMatrix(rf_cm)
+```
+
+# Predict Attrition
+```{r class.source = 'fold-show'}
+# Use the best model (Random Forest) to predict attrition from the provided data
+# Create output CSV of the results 
+emp_final_pred <- comp_set_no_attrition
+
+# Like the training data, run the data through the same prep functions
+# Convert the categorical values to numbers as factors 
+emp_final_pred <- ConvertCatToNum(emp_final_pred)
+# Prepare data to keep it standardized 
+emp_final_pred <- PrepareData(emp_final_pred)
+
+# Prediction Time
+rf_final_pred <- predict(rf_model, newdata=emp_final_pred)
+rf_predict <- as.data.frame(rf_final_pred)
+
+# Replace 0's and 1's with no and yes 
+rf_predict <- transform(rf_predict, rf_final_pred=as.character(rf_final_pred))
+rf_predict$rf_final_pred[rf_predict$rf_final_pred=="0"] <- "No"
+rf_predict$rf_final_pred[rf_predict$rf_final_pred=="1"] <- "Yes"
+
+# Change Column name
+colnames(rf_predict) <- c("Attrition")
+count(rf_predict)
+
+# Add back to data 
+rf_predict$ID <- comp_set_no_attrition$ID
+comp_set_predicted_attrition <- merge(comp_set_no_attrition, rf_predict, by="ID")
+
+# Create DF of employees that predicted yes for attrition 
+positive_attrition <- filter(comp_set_predicted_attrition, 
+                               comp_set_predicted_attrition$Attrition=="Yes")
+
+# Call out those that testing positive by employee #, not ID
+positive_attrition$EmployeeNumber
+
+# Write Results to output folder
+write.csv(comp_set_predicted_attrition, "./Output/Attrition_Prediction_Results.csv")
+```
+
+# Work Life Balance by Job Role 
+```{r class.source = 'fold-show', out.width="50%"}
+# Average work life balance by role 
+wrklife_in_role_dist <- subset(emp_data, select=c(JobRole, WorkLifeBalance))
+# Instead of creating each chart like before.. I'll create a fuction to loop
+# through it 
+wrklife_in_role_fun <- function(ar_df=data.frame()) {
+  ar_df <- ar_df
+  roles_in_data <- unique(ar_df$JobRole)  # Find the different job roles 
   
-  for(col in 2:ncol(df)) {
-    tmp_count <- count(df[col])
-    colnames(tmp_count) <- c("x", "freq") # rename columns to make them standard
-    
-    for(val in 1:length(tmp_count$x)) {
-      # Get number of rows that have the val with a Yes for attrition
-      count_attrition <- nrow(filter(df, df[1]=="Yes" & df[col]==tmp_count$x[val]))
-      # Calculate percentage 
-      percent_attrtion <- (count_attrition / tmp_count$freq[val])
-      
-      # Now lets make the change to the data to replace the data frame 
-      df[col] <- replace(df[col], df[col]==tmp_count$x[val], percent_attrtion)
-    }
+  for (role in roles_in_data) {
+    tmp_df <- filter(ar_df, ar_df$JobRole==role)
+    tmp_chart <- ggplot(tmp_df, aes(x=WorkLifeBalance)) +
+                  geom_density() + 
+                  ggtitle(role) + 
+                  labs(subtitle=paste("Mean =",
+                                      mean(tmp_df$WorkLifeBalance),
+                                      sep=' '))
+    plot(tmp_chart)
   }
-  return(df)
 }
-  
-emp_data_norm_no_salary_cat <- CategoryToPercent(emp_data_norm_no_salary_cat)
-
-### Debug ###
-test_cat <- emp_data_norm_no_salary_cat
-### END Debug ###
-
-# Changes Attrition to 1's and 0's
-# No
-emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
-  emp_data_norm_no_salary_cat$Attrition=="No", 0)
-# Yes
-emp_data_norm_no_salary_cat$Attrition <- replace(emp_data_norm_no_salary_cat$Attrition,
-  emp_data_norm_no_salary_cat$Attrition=="Yes", 1)
-
-
-# need to add ID's back to the data to be able to merge back
-# Data does not move and integretiy is still intact 
-emp_data_norm_no_salary_cat$ID <- emp_data$ID
-emp_data_norm_no_salary_const$ID <- emp_data$ID
-
-# Final data set, normailized values, no-salary information
-final_normal_no_salary <- emp_data_norm_no_salary_cat
-final_normal_no_salary <- merge(final_normal_no_salary, emp_data_norm_no_salary_const, by="ID")
-# remove ID
-final_normal_no_salary <- subset(final_normal_no_salary, select=-c(ID))
-# Change all values to numeric 
-final_normal_no_salary <- as.data.frame(lapply(final_normal_no_salary, as.numeric))
-
-
-#######################################Test#######################################
-test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="No", 0)
-test_cat$Attrition <- replace(test_cat$Attrition, test_cat$Attrition=="Yes", 1)
-test_cat <- as.data.frame(lapply(test_cat, as.numeric))
-test_cat <- as.data.frame(lapply(emp_data_norm_no_salary[c(1:19)], min_max_norm))
+wrklife_in_role_fun(wrklife_in_role_dist)
 ```
-
-# Correlation
-```{r class.source = 'fold-show', fig.width=10, fig.height=10}
-# Analyze some correlation charts to find trends
-corr_data <- cor(final_normal_no_salary)
-corrplot(corr_data, method='square', type='lower', diag=FALSE)
-```
-
-
-
-
-
-
+\
+Sales Reps have the Highest Work Life Balance \
+Research Scientist have the Lowest Work Life Balance 
 
 
 
