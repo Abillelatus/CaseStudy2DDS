@@ -1,7 +1,7 @@
 ---
 title: "MSDS 6306 Case Study Two"
 author: "Ryan Herrin"
-date: "11/19/2021"
+date: "12/3/2021"
 output: 
   html_document:
     code_folding: hide
@@ -906,7 +906,7 @@ confusionMatrix(rf_cm)
 ```
 
 # Predict Attrition
-```{r}
+```{r class.source = 'fold-show'}
 # Use the best model (Random Forest) to predict attrition from the provided data
 # Create output CSV of the results 
 emp_final_pred <- comp_set_no_attrition
@@ -938,19 +938,39 @@ comp_set_predicted_attrition <- merge(comp_set_no_attrition, rf_predict, by="ID"
 positive_attrition <- filter(comp_set_predicted_attrition, 
                                comp_set_predicted_attrition$Attrition=="Yes")
 
-positive_attrition$ID
+# Call out those that testing positive by employee #, not ID
+positive_attrition$EmployeeNumber
 
 # Write Results to output folder
 write.csv(comp_set_predicted_attrition, "./Output/Attrition_Prediction_Results.csv")
 ```
 
-# Other Interesting Information
-```{r}
-# Find high potential employess 
-
+# Work Life Balance by Job Role 
+```{r class.source = 'fold-show', out.width="50%"}
+# Average work life balance by role 
+wrklife_in_role_dist <- subset(emp_data, select=c(JobRole, WorkLifeBalance))
+# Instead of creating each chart like before.. I'll create a fuction to loop
+# through it 
+wrklife_in_role_fun <- function(ar_df=data.frame()) {
+  ar_df <- ar_df
+  roles_in_data <- unique(ar_df$JobRole)  # Find the different job roles 
+  
+  for (role in roles_in_data) {
+    tmp_df <- filter(ar_df, ar_df$JobRole==role)
+    tmp_chart <- ggplot(tmp_df, aes(x=WorkLifeBalance)) +
+                  geom_density() + 
+                  ggtitle(role) + 
+                  labs(subtitle=paste("Mean =",
+                                      mean(tmp_df$WorkLifeBalance),
+                                      sep=' '))
+    plot(tmp_chart)
+  }
+}
+wrklife_in_role_fun(wrklife_in_role_dist)
 ```
-
-
+\
+Sales Reps have the Highest Work Life Balance \
+Research Scientist have the Lowest Work Life Balance 
 
 
 
